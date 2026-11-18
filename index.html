@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.open-meteo.com">
+<meta name="theme-color" content="#0e3a55">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<title>SnowTrack Scotland</title>
+<style>
+:root{--bg:#eaf1f4;--card:#fff;--ink:#10293a;--mute:#4a6475;--line:#c9d8e0;--pri:#0e3a55;--on:#fff;--go:#d4380d;--ok:#1b7a3d;--warn:#a65b00}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1b26;--card:#12303f;--ink:#e8f1f5;--mute:#9fb7c5;--line:#27495b;--pri:#7cc4e8;--on:#0b1b26;--go:#ff7a45;--ok:#5fd68a;--warn:#ffb454}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--pri);color:var(--on)}
+header h1{font-size:1.15rem;margin:0;font-weight:700;letter-spacing:.01em}
+select{min-height:48px;font:inherit;border-radius:10px;border:2px solid var(--line);padding:0 10px;background:var(--card);color:var(--ink)}
+main{flex:1;overflow-y:auto;padding:16px 16px 24px}
+section[hidden]{display:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+h2{font-size:1.05rem;margin:0 0 8px}
+.big{font-size:5.2rem;line-height:1;font-weight:800;font-variant-numeric:tabular-nums;font-stretch:condensed;letter-spacing:-.03em}
+.unit{font-size:1.1rem;color:var(--mute);margin-left:6px;font-weight:600}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.stat b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--mute);font-size:.9rem}
+.chip{display:inline-block;padding:6px 12px;border-radius:99px;font-weight:600;font-size:.9rem;border:2px solid currentColor}
+.in{color:var(--ok)}.out{color:var(--warn)}
+button{min-height:48px;min-width:48px;font:inherit;font-weight:700;border-radius:12px;border:2px solid var(--pri);background:transparent;color:var(--pri);padding:0 18px;cursor:pointer;transition:transform .08s}
+button:active{transform:scale(.97)}
+button.main{width:100%;min-height:64px;font-size:1.25rem;background:var(--go);border-color:var(--go);color:#fff}
+button.main.stop{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+button.sm{min-height:48px}
+button:focus-visible,select:focus-visible,nav button:focus-visible{outline:3px solid var(--go);outline-offset:2px}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.gap{margin-top:12px}
+ul{list-style:none;margin:0;padding:0}
+li.s{border-top:1px solid var(--line);padding:12px 0;display:flex;justify-content:space-between;gap:10px;align-items:center}
+li.s:first-child{border-top:0}
+.mute{color:var(--mute)}
+.spin{display:inline-block;width:16px;height:16px;border:3px solid var(--line);border-top-color:var(--pri);border-radius:50%;animation:r .8s linear infinite;vertical-align:-3px;margin-right:8px}
+@keyframes r{to{transform:rotate(360deg)}}
+nav{display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{border:0;border-radius:0;min-height:56px;color:var(--mute);font-size:.85rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+nav button[aria-current=page]{color:var(--pri);box-shadow:inset 0 3px 0 var(--pri)}
+nav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#toast{position:fixed;left:16px;right:16px;bottom:84px;background:var(--ink);color:var(--bg);padding:12px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>SnowTrack</h1>
+  <label class="sr" for="area" style="position:absolute;left:-9999px">Ski area</label>
+  <select id="area"><option value="glenshee">Glenshee</option><option value="cairngorm">Cairngorm</option></select>
+</header>
+
+<main>
+  <section id="t-track" aria-labelledby="h-track">
+    <h2 id="h-track" style="position:absolute;left:-9999px">Track a run</h2>
+    <div class="card">
+      <div class="row"><span id="zone" class="chip out">Checking location…</span><span id="acc" class="mute">GPS off</span></div>
+      <div class="gap" aria-live="off"><span class="big" id="spd">0</span><span class="unit">km/h</span></div>
+      <div class="grid">
+        <div class="stat"><b id="max">0</b><span>Top speed km/h</span></div>
+        <div class="stat"><b id="dist">0.00</b><span>Distance km</span></div>
+        <div class="stat"><b id="desc">0</b><span>Descent m</span></div>
+        <div class="stat"><b id="time">0:00</b><span>Time</span></div>
+      </div>
+    </div>
+    <button id="go" class="main">Start tracking</button>
+    <div class="row gap"><button id="demo" class="sm">Run demo</button><span class="mute" id="msg" role="status" aria-live="polite"></span></div>
+  </section>
+
+  <section id="t-weather" hidden aria-labelledby="h-w">
+    <div class="card">
+      <div class="row"><h2 id="h-w">Conditions</h2><button id="refresh" class="sm">Refresh</button></div>
+      <div id="wx" role="status" aria-live="polite"></div>
+    </div>
+    <p class="mute">Forecast for about 900 m on the hill. Data: Open-Meteo. Always check the official snow report before you travel.</p>
+  </section>
+
+  <section id="t-history" hidden aria-labelledby="h-h">
+    <div class="card">
+      <div class="row"><h2 id="h-h">Saved sessions</h2><button id="export" class="sm">Export</button></div>
+      <ul id="list"></ul>
+    </div>
+  </section>
+
+  <section id="t-info" hidden aria-labelledby="h-i">
+    <div class="card">
+      <h2 id="h-i">About your data</h2>
+      <p>Location is read only while tracking is on. Sessions are stored on this phone and never uploaded. The only network call is the weather lookup, which sends the ski area's coordinates, not yours.</p>
+      <h2>Safety</h2>
+      <p>Stay on marked pistes, follow the FIS code and don't use your phone while skiing. Speed and descent come from GPS and can be off by several metres.</p>
+      <button id="clear" class="sm">Delete all sessions</button>
+    </div>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<nav aria-label="Main">
+  <button data-t="track" aria-current="page"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Track</button>
+  <button data-t="weather"><svg viewBox="0 0 24 24"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9"/></svg>Conditions</button>
+  <button data-t="history"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg>History</button>
+  <button data-t="info"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></svg>Info</button>
+</nav>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const AREAS={
+  glenshee:{name:"Glenshee",lat:56.8786,lon:-3.4170,box:[56.85,56.92,-3.50,-3.34]},
+  cairngorm:{name:"Cairngorm",lat:57.1166,lon:-3.6414,box:[57.09,57.14,-3.69,-3.59]}
+};
+const store={
+  get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{return false}}
+};
+let area=store.get("area","glenshee"); if(!AREAS[area])area="glenshee";
+let S=null, watchId=null, timer=null, demoTimer=null, lock=null;
+
+function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove("on"),2800)}
+const rad=x=>x*Math.PI/180;
+function hav(a,b,c,d){const R=6371000,dl=rad(c-a),dn=rad(d-b);const h=Math.sin(dl/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+const inside=(lat,lon)=>{const b=AREAS[area].box;return lat>=b[0]&&lat<=b[1]&&lon>=b[2]&&lon<=b[3]};
+const mmss=s=>{s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;return(h?h+":"+String(m).padStart(2,"0"):m)+":"+String(r).padStart(2,"0")};
+
+/* Navigation */
+document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.removeAttribute("aria-current"));
+  b.setAttribute("aria-current","page");
+  document.querySelectorAll("main section").forEach(s=>s.hidden=s.id!=="t-"+b.dataset.t);
+  if(b.dataset.t==="history")renderList();
+  if(b.dataset.t==="weather")loadWx(false);
+}));
+$("#area").value=area;
+$("#area").addEventListener("change",e=>{if(S){e.target.value=area;toast("Stop tracking first");return}area=e.target.value;store.set("area",area);zone(null);$("#wx").textContent=""});
+
+/* Tracking */
+function zone(p){
+  const z=$("#zone");
+  if(!p){z.className="chip out";z.textContent="Location unknown";return}
+  const i=inside(p.lat,p.lon);
+  z.className="chip "+(i?"in":"out");
+  z.textContent=i?"On "+AREAS[area].name:"Away from "+AREAS[area].name;
+}
+function draw(){
+  if(!S)return;
+  $("#spd").textContent=Math.round(S.v*3.6);
+  $("#max").textContent=Math.round(S.max*3.6);
+  $("#dist").textContent=(S.dist/1000).toFixed(2);
+  $("#desc").textContent=Math.round(S.desc);
+  $("#time").textContent=mmss((Date.now()-S.t0)/1000);
+}
+function onPos(p){
+  const c=p.coords;
+  $("#acc").textContent="GPS ±"+Math.round(c.accuracy)+" m";
+  zone({lat:c.latitude,lon:c.longitude});
+  if(!S||c.accuracy>40)return;
+  const L=S.last;
+  if(L){
+    const d=hav(L.lat,L.lon,c.latitude,c.longitude),dt=(p.timestamp-L.ts)/1000;
+    if(dt<=0)return;
+    let v=c.speed!=null&&!isNaN(c.speed)?c.speed:d/dt;
+    if(v>45)return;               // reject GPS spikes (>162 km/h)
+    if(d>=2){S.dist+=d}else v=0;  // ignore jitter while standing
+    S.v=v;S.max=Math.max(S.max,v);
+  }
+  if(c.altitude!=null){
+    if(S.ref==null)S.ref=c.altitude;
+    else if(S.ref-c.altitude>=3){S.desc+=S.ref-c.altitude;S.ref=c.altitude}
+    else if(c.altitude-S.ref>=3)S.ref=c.altitude;
+  }
+  S.last={lat:c.latitude,lon:c.longitude,ts:p.timestamp};
+  draw();
+}
+function onErr(e){
+  const m={1:"Location blocked. Allow it in browser settings.",2:"No GPS signal. Try an open area.",3:"GPS timed out. Retrying…"};
+  $("#msg").textContent=m[e.code]||"GPS error";
+  if(e.code===1)stop(true);
+}
+async function start(demo){
+  if(!demo&&!("geolocation" in navigator)){$("#msg").textContent="This device has no GPS.";return}
+  S={t0:Date.now(),dist:0,max:0,desc:0,v:0,ref:null,last:null};
+  $("#go").textContent="Stop and save";$("#go").classList.add("stop");$("#msg").textContent=demo?"Demo mode":"Tracking…";
+  timer=setInterval(draw,1000);
+  try{lock=await navigator.wakeLock?.request("screen")}catch{}
+  if(!demo)watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:1000,timeout:15000});
+}
+function stop(discard){
+  if(watchId!=null)navigator.geolocation.clearWatch(watchId);
+  clearInterval(timer);clearInterval(demoTimer);watchId=demoTimer=null;
+  try{lock?.release()}catch{} lock=null;
+  const s=S;S=null;
+  $("#go").textContent="Start tracking";$("#go").classList.remove("stop");
+  if(s&&!discard&&s.dist>=20){
+    const list=store.get("sessions",[]);
+    list.unshift({id:Date.now(),area,date:new Date().toISOString(),dur:(Date.now()-s.t0)/1000,dist:s.dist,max:s.max,desc:s.desc});
+    toast(store.set("sessions",list.slice(0,200))?"Session saved":"Storage full, not saved");
+  }else if(s)toast("Too short to save");
+  $("#msg").textContent="";
+}
+$("#go").addEventListener("click",()=>S?stop(false):start(false));
+$("#demo").addEventListener("click",()=>{
+  if(S){toast("Stop tracking first");return}
+  start(true);
+  const a=AREAS[area];let i=0;
+  demoTimer=setInterval(()=>{
+    i++;
+    const sp=8+6*Math.sin(i/6)+(i%17===0?4:0);
+    onPos({timestamp:Date.now(),coords:{latitude:a.lat-i*0.00008,longitude:a.lon+i*0.00004,accuracy:6,speed:sp,altitude:1050-i*1.4}});
+    if(i>=90){stop(false)}
+  },300);
+});
+
+/* Weather (API integration, cached for offline use) */
+const WX={0:"Clear",1:"Mostly clear",2:"Part cloud",3:"Overcast",45:"Fog",48:"Rime fog",51:"Drizzle",61:"Rain",63:"Rain",65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",77:"Snow grains",80:"Showers",85:"Snow showers",86:"Heavy snow showers",95:"Thunderstorm"};
+function showWx(d,stale){
+  const c=d.current,t=d.daily;
+  $("#wx").innerHTML=
+   `<div class="big">${Math.round(c.temperature_2m)}°<span class="unit">feels ${Math.round(c.apparent_temperature)}°</span></div>`+
+   `<p>${WX[c.weather_code]||"Mixed"}</p>`+
+   `<div class="grid"><div class="stat"><b>${Math.round(c.wind_speed_10m)} mph</b><span>Wind</span></div>`+
+   `<div class="stat"><b>${Math.round(c.wind_gusts_10m)} mph</b><span>Gusts</span></div>`+
+   `<div class="stat"><b>${t.snowfall_sum[0].toFixed(1)} cm</b><span>Snow today</span></div>`+
+   `<div class="stat"><b>${t.snowfall_sum[1].toFixed(1)} cm</b><span>Snow tomorrow</span></div></div>`+
+   (stale?`<p class="mute">Offline. Showing saved data from ${new Date(stale).toLocaleString("en-GB")}.</p>`:"");
+}
+async function loadWx(force){
+  const a=AREAS[area],key="wx_"+area,hit=store.get(key,null);
+  if(hit&&!force&&Date.now()-hit.t<600000){showWx(hit.d);return}
+  $("#wx").innerHTML='<span class="spin"></span>Loading conditions…';
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${a.lat}&longitude=${a.lon}&elevation=900&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m&daily=snowfall_sum&timezone=Europe%2FLondon&wind_speed_unit=mph&forecast_days=2`;
+  try{
+    const r=await fetch(u);
+    if(!r.ok)throw new Error(r.status);
+    const d=await r.json();
+    if(!d.current||!d.daily)throw new Error("bad data");
+    store.set(key,{t:Date.now(),d});showWx(d);
+  }catch{
+    if(hit)showWx(hit.d,hit.t);else $("#wx").textContent="Couldn't load conditions. Check your connection and tap Refresh.";
+  }
+}
+$("#refresh").addEventListener("click",()=>loadWx(true));
+
+/* History */
+function renderList(){
+  const l=store.get("sessions",[]),ul=$("#list");ul.textContent="";
+  if(!l.length){const li=document.createElement("li");li.className="mute";li.textContent="No sessions yet. Track a run and it will appear here.";ul.append(li);return}
+  l.forEach(s=>{
+    const li=document.createElement("li");li.className="s";
+    const d=document.createElement("div");
+    const t=document.createElement("b");t.textContent=(AREAS[s.area]?.name||"Unknown")+" · "+new Date(s.date).toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    const m=document.createElement("div");m.className="mute";
+    m.textContent=`${(s.dist/1000).toFixed(2)} km · top ${Math.round(s.max*3.6)} km/h · ${Math.round(s.desc)} m down · ${mmss(s.dur)}`;
+    d.append(t,m);
+    const b=document.createElement("button");b.className="sm";b.textContent="Delete";b.setAttribute("aria-label","Delete session from "+new Date(s.date).toLocaleDateString("en-GB"));
+    b.onclick=()=>{store.set("sessions",store.get("sessions",[]).filter(x=>x.id!==s.id));renderList()};
+    li.append(d,b);ul.append(li);
+  });
+}
+$("#export").addEventListener("click",()=>{
+  const l=store.get("sessions",[]);if(!l.length){toast("Nothing to export");return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(l,null,2)],{type:"application/json"}));
+  a.download="snowtrack-sessions.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+$("#clear").addEventListener("click",()=>{if(confirm("Delete all saved sessions?")){store.set("sessions",[]);toast("Sessions deleted")}});
+
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
